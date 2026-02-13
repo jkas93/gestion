@@ -1,0 +1,17 @@
+[
+    {
+        "origin": [
+            "http://localhost:3000",
+            "https://tu-dominio.com"
+        ],
+        "method": [
+            "GET",
+            "POST",
+            "PUT",
+            "DELETE",
+            "HEAD",
+            "OPTIONS"
+        ],
+        "maxAgeSeconds": 3600
+    }
+]
