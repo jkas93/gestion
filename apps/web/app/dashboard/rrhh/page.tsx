@@ -139,6 +139,33 @@ export default function RRHHPage() {
         }
     };
 
+    const handleDeleteInvite = async (uid: string) => {
+        if (!window.confirm("¿Estás seguro de que deseas eliminar esta invitación? Esta acción no se puede deshacer.")) return;
+
+        try {
+            const user = auth.currentUser;
+            if (!user) return;
+            const idToken = await user.getIdToken();
+
+            const res = await fetch(`${API_URL}/users/invite/${uid}`, {
+                method: "DELETE",
+                headers: {
+                    Authorization: `Bearer ${idToken}`,
+                },
+            });
+
+            if (res.ok) {
+                showToast("Invitación eliminada exitosamente", "success");
+                fetchEmployees();
+            } else {
+                const error = await res.json();
+                showToast(error.message || "Error al eliminar la invitación", "error");
+            }
+        } catch (error) {
+            showToast("Error de conexión", "error");
+        }
+    };
+
     const canEdit = role === UserRole.GERENTE || role === UserRole.RRHH;
 
     return (
@@ -191,6 +218,7 @@ export default function RRHHPage() {
                                 <th>Posición</th>
                                 <th>Contacto</th>
                                 <th className="text-right">Remuneración</th>
+                                <th className="text-center w-20">Acciones</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
@@ -199,18 +227,33 @@ export default function RRHHPage() {
                                     <td>
                                         <div className="flex items-center gap-3">
                                             <div className="w-10 h-10 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center font-bold text-xs text-primary">
-                                                {emp.name[0]}
+                                                {emp.name ? emp.name[0] : '?'}
                                             </div>
-                                            <span className="font-bold tracking-tight text-gray-900">{emp.name}</span>
+                                            <div>
+                                                <div className="font-bold tracking-tight text-gray-900">{emp.name}</div>
+                                                {!emp.hasLaborProfile && (
+                                                    <div className="text-[9px] text-amber-500 font-bold uppercase tracking-tighter">Sin ficha laboral</div>
+                                                )}
+                                            </div>
                                         </div>
                                     </td>
                                     <td>
-                                        <span className="px-3 py-1 bg-gray-100 text-gray-700 rounded-lg text-[10px] font-bold border border-gray-200 uppercase tracking-tighter">
+                                        <span className={`px-3 py-1 rounded-lg text-[10px] font-bold border uppercase tracking-tighter ${emp.role?.toUpperCase() === UserRole.GERENTE ? 'bg-red-50 text-red-600 border-red-100' :
+                                            emp.role?.toUpperCase() === UserRole.PMO ? 'bg-orange-50 text-orange-600 border-orange-100' :
+                                                emp.role?.toUpperCase() === UserRole.COORDINADOR ? 'bg-blue-50 text-blue-600 border-blue-100' :
+                                                    emp.role?.toUpperCase() === UserRole.RRHH ? 'bg-purple-50 text-purple-600 border-purple-100' :
+                                                        emp.role?.toUpperCase() === UserRole.SIG ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
+                                                            emp.role?.toUpperCase() === UserRole.CALIDAD ? 'bg-yellow-50 text-yellow-600 border-yellow-100' :
+                                                                emp.role?.toUpperCase() === UserRole.ASISTENTE ? 'bg-cyan-50 text-cyan-600 border-cyan-100' :
+                                                                    'bg-gray-100 text-gray-700 border-gray-200'
+                                            }`}>
                                             {emp.role}
                                         </span>
                                     </td>
                                     <td className="text-gray-500 text-sm font-medium italic">{emp.email}</td>
-                                    <td className="text-right font-mono text-emerald-600 font-bold">${emp.salary}</td>
+                                    <td className="text-right font-mono text-emerald-600 font-bold">
+                                        {emp.salary ? `S/ ${emp.salary}` : '---'}
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>

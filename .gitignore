@@ -36,3 +36,12 @@ yarn-error.log*
 # Misc
 .DS_Store
 *.pem
+*.txt
+*.log
+apps/api/check-db.js
+apps/api/list-users.js
+apps/api/test-firebase.js
+apps/api/test-key.js
+apps/api/verify-unification.js
+apps/api/write-env.js
+apps/api/key_output*

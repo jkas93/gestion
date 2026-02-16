@@ -18,8 +18,48 @@ export class RRHHService {
     }
 
     async findAllEmployees(): Promise<any[]> {
-        const snapshot = await this.firebaseService.getFirestore().collection('employees').get();
-        return snapshot.docs.map(doc => doc.data());
+        const firestore = this.firebaseService.getFirestore();
+
+        // 1. Obtener todos los usuarios (accesos)
+        const usersSnapshot = await firestore.collection('users').get();
+        const usersMap = new Map();
+        usersSnapshot.docs.forEach(doc => {
+            usersMap.set(doc.id, { id: doc.id, ...doc.data() });
+        });
+
+        // 2. Obtener todos los empleados (fichas laborales)
+        const employeesSnapshot = await firestore.collection('employees').get();
+        const employeesMap = new Map();
+        employeesSnapshot.docs.forEach(doc => {
+            employeesMap.set(doc.id, { id: doc.id, ...doc.data() });
+        });
+
+        // 3. Unificar: Todos los que están en 'users' son empleados.
+        // Si no tienen ficha laboral en 'employees', se usan sus datos de 'users'.
+        const unifiedList: any[] = [];
+
+        usersMap.forEach((userData, id) => {
+            const employeeData = employeesMap.get(id);
+            unifiedList.push({
+                ...userData, // Datos de acceso (name, email, role)
+                ...(employeeData || {}), // Datos laborales si existen (salary, dni, etc)
+                id, // Asegurar id consistente
+                hasLaborProfile: !!employeeData // Flag para saber si tiene ficha laboral completa
+            });
+        });
+
+        // 4. Agregar empleados que NO tienen cuenta de usuario (si existen operarios sin acceso)
+        employeesMap.forEach((empData, id) => {
+            if (!usersMap.has(id)) {
+                unifiedList.push({
+                    ...empData,
+                    hasLaborProfile: true,
+                    hasAccess: false
+                });
+            }
+        });
+
+        return unifiedList;
     }
 
     async updateEmployee(id: string, data: any): Promise<void> {

@@ -12,6 +12,7 @@ import { MaterialsModule } from './materials/materials.module';
 import { MaterialRequestsModule } from './material-requests/material-requests.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { MailModule } from './mail/mail.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { AppService } from './app.service';
       isGlobal: true,
     }),
     FirebaseModule,
+    MailModule,
     UsersModule,
     ProjectsModule,
     RRHHModule,

@@ -1,5 +1,6 @@
-import { Controller, Post, Body, UseGuards, Get, Param } from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, Get, Param, Delete } from '@nestjs/common';
 import { FirebaseService } from '../firebase/firebase.service';
+import { MailService } from '../mail/mail.service';
 import { UserRole } from '@erp/shared';
 import { Roles } from '../auth/roles.decorator';
 import { FirebaseAuthGuard } from '../auth/firebase-auth.guard';
@@ -7,7 +8,10 @@ import { RolesGuard } from '../auth/roles.guard';
 
 @Controller('users')
 export class UsersController {
-    constructor(private firebaseService: FirebaseService) { }
+    constructor(
+        private firebaseService: FirebaseService,
+        private mailService: MailService
+    ) { }
 
     @Post('register')
     async register(@Body() body: { uid: string, email: string, name: string, role?: UserRole }) {
@@ -109,13 +113,47 @@ export class UsersController {
             // 4. Generate password reset link
             const resetLink = await this.firebaseService.getAuth().generatePasswordResetLink(email);
 
+            // 5. Send Welcome Email
+            try {
+                await this.mailService.sendWelcomeEmail(email, name, resetLink);
+            } catch (mailError) {
+                console.error('Failed to send welcome email, but user was created:', mailError);
+                // We don't throw here to avoid failing the whole invite process if only mail fails
+            }
+
             return {
-                message: 'Usuario invitado exitosamente',
+                message: 'Usuario invitado exitosamente y correo enviado',
                 uid,
                 resetLink
             };
         } catch (error: any) {
             throw new Error(`Error inviting user: ${error.message}`);
+        }
+    }
+
+    @Delete('invite/:uid')
+    @UseGuards(FirebaseAuthGuard, RolesGuard)
+    @Roles(UserRole.GERENTE, UserRole.RRHH)
+    async deleteInvite(@Param('uid') uid: string) {
+        try {
+            // 1. Delete from Firebase Auth
+            await this.firebaseService.getAuth().deleteUser(uid);
+
+            // 2. Delete from Firestore users collection
+            await this.firebaseService.getFirestore()
+                .collection('users')
+                .doc(uid)
+                .delete();
+
+            // 3. Delete from Firestore employees collection (if exists)
+            await this.firebaseService.getFirestore()
+                .collection('employees')
+                .doc(uid)
+                .delete();
+
+            return { message: 'Invitación y registros eliminados exitosamente' };
+        } catch (error: any) {
+            throw new Error(`Error deleting invitation: ${error.message}`);
         }
     }
 }
