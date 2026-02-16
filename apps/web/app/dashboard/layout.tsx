@@ -15,6 +15,21 @@ export default function DashboardLayout({
     const router = useRouter();
     const [isSidebarCollapsed, setIsSidebarCollapsed] = React.useState(false);
 
+    // Cargar estado inicial desde localStorage
+    useEffect(() => {
+        const savedState = localStorage.getItem("sidebar_collapsed");
+        if (savedState !== null) {
+            setIsSidebarCollapsed(savedState === "true");
+        }
+    }, []);
+
+    // Guardar estado en localStorage cuando cambie
+    const toggleSidebar = () => {
+        const newState = !isSidebarCollapsed;
+        setIsSidebarCollapsed(newState);
+        localStorage.setItem("sidebar_collapsed", String(newState));
+    };
+
     useEffect(() => {
         if (!loading && !user) {
             router.push("/login");
@@ -36,11 +51,11 @@ export default function DashboardLayout({
 
     return (
         <div className="flex h-screen overflow-hidden bg-background w-full">
-            <Sidebar isCollapsed={isSidebarCollapsed} onToggle={() => setIsSidebarCollapsed(!isSidebarCollapsed)} />
+            <Sidebar isCollapsed={isSidebarCollapsed} onToggle={toggleSidebar} />
             <div className="flex-1 flex flex-col min-w-0">
                 {/* Navbar / Topbar - Fixed at top of content area */}
                 <header className="flex h-14 lg:h-[60px] items-center gap-4 border-b bg-background px-6 shrink-0 z-50">
-                    <button className="lg:hidden p-2 -ml-2 text-muted-foreground hover:bg-muted rounded-md" onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}>
+                    <button className="lg:hidden p-2 -ml-2 text-muted-foreground hover:bg-muted rounded-md" onClick={toggleSidebar}>
                         <Menu className="h-5 w-5" />
                     </button>
 

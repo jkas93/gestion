@@ -19,8 +19,15 @@ export function useDashboardStats() {
     useEffect(() => {
         const fetchStats = async () => {
             try {
+                setLoading(true);
+                setError(null);
+
                 const idToken = await auth.currentUser?.getIdToken();
-                if (!idToken) return;
+                if (!idToken) {
+                    setError("Sesión no iniciada");
+                    setLoading(false);
+                    return;
+                }
 
                 const res = await fetch(`${API_URL}/stats/dashboard`, {
                     headers: { Authorization: `Bearer ${idToken}` }
@@ -30,10 +37,12 @@ export function useDashboardStats() {
                     const data = await res.json();
                     setStats(data);
                 } else {
-                    setError("Error al cargar estadísticas");
+                    const errorBody = await res.json().catch(() => ({}));
+                    setError(errorBody.message || "Error al cargar estadísticas");
                 }
             } catch (err) {
-                setError("Fallo de conexión");
+                console.error("API Connection Error:", err);
+                setError("No se pudo conectar con el servidor central");
             } finally {
                 setLoading(false);
             }
