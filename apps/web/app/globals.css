@@ -40,6 +40,7 @@
   --radius: 0.875rem;
 }
 
+
 /* 
    REMOVED DARK MODE QUERY TO ENFORCE LIGHT THEME 
    AS PER "NO TAN OSCURO" REQUEST 
@@ -47,6 +48,7 @@
 
 * {
   border-color: hsl(var(--color-border));
+  font-family: var(--font-inter), sans-serif;
 }
 
 body {
@@ -217,4 +219,47 @@ body {
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+}
+
+
+/* Scrollbar Handling */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+/* Date Input Customization */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  filter: invert(0.5);
+  opacity: 0.6;
+  transition: 0.2s;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+  filter: invert(0.4) sepia(1) saturate(2) hue-rotate(45deg);
 }

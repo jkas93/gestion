@@ -36,16 +36,49 @@ export interface ProjectTask {
     startDate: string; // ISO String
     endDate: string;   // ISO String
     progress: number;  // 0-100
+    status?: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED';
     order: number;
+}
+
+export enum ProjectStatus {
+    PLANIFICACION = 'PLANIFICACION',
+    EN_PROGRESO = 'EN_PROGRESO',
+    PAUSADO = 'PAUSADO',
+    COMPLETADO = 'COMPLETADO',
+    CANCELADO = 'CANCELADO',
+    ACTIVE = 'ACTIVE', // Legacy compatibility
+    PAUSED = 'PAUSED',  // Legacy compatibility
+    COMPLETED = 'COMPLETED' // Legacy compatibility
+}
+
+export interface ProjectMilestone {
+    id: string;
+    name: string;
+    description?: string;
+    startDate: string;
+    endDate: string;
+    status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED';
+    order: number;
+}
+
+export interface ProjectResources {
+    budgetAllocated: number;
+    budgetSpent: number;
+    estimatedHours: number;
+    actualHours: number;
+    assignedTeamIds: string[];
 }
 
 export interface Project {
     id: string;
     name: string;
     description: string;
-    status: "ACTIVE" | "PAUSED" | "COMPLETED";
+    status: ProjectStatus | "ACTIVE" | "PAUSED" | "COMPLETED"; // Support legacy values
     coordinatorId: string;
     supervisorId: string | null;
+    startDate?: string;
+    endDate?: string;
+    resources?: ProjectResources;
     createdAt: string;
 }
 

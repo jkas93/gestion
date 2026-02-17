@@ -39,10 +39,20 @@ export default function RRHHPage() {
             const currentUser = auth.currentUser;
             if (!currentUser) return;
             const idToken = await currentUser.getIdToken();
-            const res = await fetch(`${API_URL}/rrhh/employees`, {
+            // Default limit 50 for initial load
+            const res = await fetch(`${API_URL}/rrhh/employees?limit=50`, {
                 headers: { Authorization: `Bearer ${idToken}` },
             });
-            if (res.ok) setEmployees(await res.json());
+            if (res.ok) {
+                const data = await res.json();
+                if (data.employees && Array.isArray(data.employees)) {
+                    setEmployees(data.employees);
+                } else if (Array.isArray(data)) {
+                    setEmployees(data);
+                } else {
+                    setEmployees([]);
+                }
+            }
         } catch (error) {
             showToast("Error al cargar empleados", "error");
         }

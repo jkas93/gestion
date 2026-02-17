@@ -3,11 +3,12 @@
 import { useEffect, useState, use } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
-import { Project, UserRole, ProjectTask, TaskType, ProgressLog, Purchase } from "@erp/shared";
+import { Project, UserRole, ProjectTask, TaskType, ProgressLog, Purchase, ProjectMilestone } from "@erp/shared";
 import { auth, storage } from "@/lib/firebase/clientApp";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useToast } from "@/hooks/useToast";
-import { Plus, Check, Clock, AlertTriangle, Trash2, Edit, ClipboardCheck, Activity, Upload, X } from "lucide-react";
+import { Plus, Check, Clock, AlertTriangle, Trash2, Edit, ClipboardCheck, Activity, Upload, X, Calendar, DollarSign, BarChart3 } from "lucide-react";
+import { HealthDonutChart, MilestoneMarker, ProjectHealthIndicator, StatusBadge } from "@/components/ui/start-project-components";
 
 export default function ProjectGanttPage({ params }: { params: Promise<{ id: string }> }) {
     // Unwrap params using use() hook or useEffect. Next.js 15+ recommends unwrapping.
@@ -22,6 +23,14 @@ export default function ProjectGanttPage({ params }: { params: Promise<{ id: str
     const router = useRouter();
     const [project, setProject] = useState<Project | null>(null);
     const [tasks, setTasks] = useState<ProjectTask[]>([]);
+    const [milestones, setMilestones] = useState<ProjectMilestone[]>([]);
+    const [health, setHealth] = useState<{
+        progressPercentage: number;
+        budgetHealth: 'GOOD' | 'WARNING' | 'CRITICAL';
+        scheduleHealth: 'ON_TIME' | 'AT_RISK' | 'DELAYED';
+        tasksCompleted: number;
+        tasksTotal: number;
+    } | null>(null);
     const [catalog, setCatalog] = useState<any[]>([]);
     const [loadingData, setLoadingData] = useState(true);
 
@@ -165,6 +174,8 @@ export default function ProjectGanttPage({ params }: { params: Promise<{ id: str
             fetchProjectData();
             fetchCatalog();
             fetchProgressLogs();
+            fetchMilestones();
+            fetchProjectHealth();
         }
     }, [user, loading, role, projectId, router]);
 
@@ -176,6 +187,26 @@ export default function ProjectGanttPage({ params }: { params: Promise<{ id: str
         if (res.ok) {
             const data = await res.json();
             setProgressLogs(data);
+        }
+    };
+
+    const fetchMilestones = async () => {
+        const idToken = await auth.currentUser?.getIdToken();
+        const res = await fetch(`${API_URL}/projects/${projectId}/milestones`, {
+            headers: { Authorization: `Bearer ${idToken}` }
+        });
+        if (res.ok) {
+            setMilestones(await res.json());
+        }
+    };
+
+    const fetchProjectHealth = async () => {
+        const idToken = await auth.currentUser?.getIdToken();
+        const res = await fetch(`${API_URL}/projects/${projectId}/health`, {
+            headers: { Authorization: `Bearer ${idToken}` }
+        });
+        if (res.ok) {
+            setHealth(await res.json());
         }
     };
 
@@ -465,7 +496,7 @@ export default function ProjectGanttPage({ params }: { params: Promise<{ id: str
                     .filter(log => log.taskId === task.id && log.date <= dStr)
                     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-                if (taskLogs.length > 0) {
+                if (taskLogs.length > 0 && taskLogs[0]) {
                     totalReal += taskLogs[0].progressPercentage;
                 } else {
                     // If no logs, assume 0 for the start, but if it's currently marked as completed in state, 
@@ -513,12 +544,33 @@ export default function ProjectGanttPage({ params }: { params: Promise<{ id: str
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                             </svg>
                         </button>
-                        <span className="text-xs font-bold text-primary uppercase tracking-widest border border-primary/30 px-2 py-1 rounded bg-primary/10">
-                            {project.status === 'ACTIVE' ? 'En Ejecución' : 'Planificación'}
-                        </span>
+                        <StatusBadge status={project.status} />
                     </div>
                     <h1 className="text-4xl title-gradient mb-2">{project.name}</h1>
                     <p className="text-gray-400 font-medium max-w-2xl">{project.description}</p>
+                </div>
+
+                <div className="flex bg-white/5 border border-white/5 p-4 rounded-xl items-center gap-8 backdrop-blur-sm">
+                    {health && (
+                        <>
+                            <div className="flex items-center gap-4">
+                                <HealthDonutChart percentage={health.progressPercentage} size={60} showLabel={false} />
+                                <div className="flex flex-col">
+                                    <span className="text-2xl font-black text-white">{health.progressPercentage}%</span>
+                                    <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Avance Global</span>
+                                </div>
+                            </div>
+                            <div className="w-px h-10 bg-white/10"></div>
+                            <div className="space-y-2">
+                                <ProjectHealthIndicator
+                                    type="SCHEDULE"
+                                    status={health.scheduleHealth}
+                                    value={health.scheduleHealth === 'ON_TIME' ? 'A tiempo' : health.scheduleHealth === 'AT_RISK' ? 'En riesgo' : 'Retrasado'}
+                                />
+                                {/* Budget Indicator placeholder - would need actual budget data passed or calculated */}
+                            </div>
+                        </>
+                    )}
                 </div>
 
                 {(role === UserRole.GERENTE || role === UserRole.PMO || role === UserRole.COORDINADOR || role === UserRole.SUPERVISOR) && (
@@ -621,9 +673,9 @@ export default function ProjectGanttPage({ params }: { params: Promise<{ id: str
 
                         {/* Task Rows */}
                         <div className="relative min-h-[400px]">
-                            {/* Vertical Grid Lines */}
+                            {/* Vertical Grid Lines & Milestones */}
                             <div className="absolute inset-0 left-80 pointer-events-none z-10">
-                                <div className="flex h-full">
+                                <div className="flex h-full relative">
                                     {days.map((_, i) => (
                                         <div
                                             key={i}
@@ -631,6 +683,30 @@ export default function ProjectGanttPage({ params }: { params: Promise<{ id: str
                                             style={{ width: `${dayWidth}px` }}
                                         ></div>
                                     ))}
+
+                                    {/* Milestones Markers */}
+                                    {milestones.map(milestone => {
+                                        const milestoneDate = new Date(milestone.startDate);
+                                        const offsetDays = (milestoneDate.getTime() - chartStart.getTime()) / (1000 * 60 * 60 * 24);
+
+                                        // Only render if within view
+                                        if (offsetDays < 0 || offsetDays > totalDays) return null;
+
+                                        return (
+                                            <div
+                                                key={milestone.id}
+                                                className="absolute top-0 bottom-0 z-20 pointer-events-auto"
+                                                style={{ left: `${offsetDays * dayWidth}px` }}
+                                            >
+                                                <MilestoneMarker
+                                                    date={milestone.startDate}
+                                                    label={milestone.name}
+                                                    isCompleted={milestone.status === 'COMPLETED'}
+                                                    positionLeft={0} // Using absolute positioning of parent instead
+                                                />
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             </div>
 
@@ -718,18 +794,18 @@ export default function ProjectGanttPage({ params }: { params: Promise<{ id: str
                                         >
                                             {/* Today Marker Line (Only once, conceptually part of the grid) */}
                                             {todayLeftPosition >= 0 && todayLeftPosition <= days.length * dayWidth && (
-                                                <div className="absolute top-0 bottom-0 w-0.5 bg-red-500/40 z-0 pointer-events-none" style={{ left: `${todayLeftPosition}px` }}>
-                                                    <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-red-500 text-white text-[8px] font-bold px-1 rounded">HOY</div>
+                                                <div className="absolute top-0 bottom-0 w-px bg-red-500/50 z-0 pointer-events-none" style={{ left: `${todayLeftPosition}px` }}>
+                                                    <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-red-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded shadow-lg shadow-red-500/20">HOY</div>
                                                 </div>
                                             )}
 
                                             <div
-                                                className={`rounded-sm shadow-md border overflow-hidden flex items-center px-1 absolute group/bar
+                                                className={`rounded-full shadow-sm border overflow-hidden flex items-center px-1 absolute group/bar transition-all
                                                     ${isArea
-                                                        ? 'bg-primary/20 border-primary/40 h-3 shadow-primary/10'
+                                                        ? 'bg-blue-500/10 border-blue-500/20 h-2 mt-2'
                                                         : task.progress === 100
-                                                            ? 'bg-green-600/60 border-green-500/30 h-5'
-                                                            : 'bg-primary/60 border-primary/30 h-5 shadow-lg shadow-primary/5'}`}
+                                                            ? 'bg-gradient-to-r from-emerald-500 to-emerald-600 border-emerald-400/50 h-5 shadow-emerald-500/20'
+                                                            : 'bg-gradient-to-r from-amber-400 to-amber-500 border-amber-400/50 h-5 shadow-amber-500/20'}`}
                                                 style={{
                                                     left: style.left,
                                                     width: style.width,
@@ -741,33 +817,36 @@ export default function ProjectGanttPage({ params }: { params: Promise<{ id: str
                                                 onClick={(e) => e.stopPropagation()}
                                             >
                                                 {/* Resize Handles */}
-                                                {(role === UserRole.GERENTE || role === UserRole.PMO || role === UserRole.COORDINADOR || role === UserRole.SUPERVISOR) && (
+                                                {(role === UserRole.GERENTE || role === UserRole.PMO || role === UserRole.COORDINADOR || role === UserRole.SUPERVISOR) && !isArea && (
                                                     <>
                                                         <div
-                                                            className="absolute left-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-white/30 z-20"
+                                                            className="absolute left-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-white/30 z-20 rounded-l-full"
                                                             onMouseDown={(e) => handleInteractionStart(e, task, 'RESIZE_START')}
                                                         ></div>
                                                         <div
-                                                            className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-white/30 z-20"
+                                                            className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-white/30 z-20 rounded-r-full"
                                                             onMouseDown={(e) => handleInteractionStart(e, task, 'RESIZE_END')}
                                                         ></div>
                                                     </>
                                                 )}
 
                                                 {/* Progress Fill */}
-                                                <div className="absolute left-0 top-0 bottom-0 bg-white/20 pointer-events-none" style={{ width: `${task.progress}%` }}></div>
+                                                {!isArea && (
+                                                    <div className="absolute left-0 top-0 bottom-0 bg-white/30 pointer-events-none" style={{ width: `${task.progress}%` }}></div>
+                                                )}
 
                                                 {/* Label inside bar if wide enough */}
-                                                {parseInt(style.width) > 40 && (
-                                                    <span className="text-[8px] font-bold text-white/50 uppercase tracking-tighter truncate pointer-events-none ml-1">
+                                                {parseInt(style.width) > 40 && !isArea && (
+                                                    <span className="text-[8px] font-black text-white/90 uppercase tracking-tighter truncate pointer-events-none ml-1 drop-shadow-md">
                                                         {task.progress}%
                                                     </span>
                                                 )}
 
                                                 {/* Tooltip on Hover */}
-                                                <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-gray-900 border border-white/20 px-3 py-1.5 rounded-lg text-[10px] whitespace-nowrap opacity-0 group-hover/bar:opacity-100 transition-opacity z-[100] pointer-events-none shadow-2xl">
-                                                    <div className="font-bold text-primary">{task.title}</div>
-                                                    <div className="text-gray-400 font-mono">
+                                                <div className="absolute -top-12 left-1/2 -translate-x-1/2 bg-gray-900/90 backdrop-blur-md border border-white/10 px-4 py-2 rounded-xl text-[10px] whitespace-nowrap opacity-0 group-hover/bar:opacity-100 transition-opacity z-[100] pointer-events-none shadow-xl flex flex-col items-center">
+                                                    <div className="font-bold text-white mb-0.5">{task.title}</div>
+                                                    <div className="flex items-center gap-2 text-gray-400 font-mono text-[9px]">
+                                                        <Calendar className="w-3 h-3" />
                                                         {new Date(task.startDate).toLocaleDateString()} → {new Date(task.endDate).toLocaleDateString()}
                                                     </div>
                                                 </div>

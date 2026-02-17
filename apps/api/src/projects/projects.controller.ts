@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Patch, Delete, UseGuards, Request, UsePipes } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Patch, Delete, UseGuards, Request, UsePipes, Query } from '@nestjs/common';
 import { ProjectsService } from './projects.service';
 import { FirebaseAuthGuard } from '../auth/firebase-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -22,25 +22,74 @@ export class ProjectsController {
     }
 
     @Get()
-    async findAll(@Request() req: any) {
-        const userId = req.user.uid;
-        const role = req.user.role;
-        return this.projectsService.findAll(userId, role);
+    async findAll(
+        @Request() req: any,
+        @Query('limit') limit?: string,
+        @Query('cursor') cursor?: string
+    ) {
+        const pageSize = limit ? parseInt(limit, 10) : 20;
+        return this.projectsService.findAll(req.user.uid, req.user.role, pageSize, cursor);
     }
 
-    @Get(':id')
-    async findOne(@Param('id') id: string, @Request() req: any) {
-        return this.projectsService.findOne(id, req.user.uid, req.user.role);
+    // ========================================
+    // PROJECT HEALTH DASHBOARD (DEBE IR ANTES DE :id genérico)
+    // ========================================
+
+    @Get(':id/health')
+    async getProjectHealth(
+        @Param('id') id: string,
+        @Request() req: any
+    ) {
+        return this.projectsService.getProjectHealth(id, req.user.uid, req.user.role);
     }
 
-    @Patch(':id')
-    @Roles(UserRole.GERENTE, UserRole.PMO, UserRole.COORDINADOR, UserRole.SUPERVISOR)
-    async update(@Param('id') id: string, @Body() updateProjectDto: Partial<Project>, @Request() req: any) {
-        await this.projectsService.update(id, updateProjectDto, req.user.uid, req.user.role);
-        return { message: 'Project updated successfully' };
+    // ========================================
+    // MILESTONES / HITOS (DEBE IR ANTES DE :id genérico)
+    // ========================================
+
+    @Post(':projectId/milestones')
+    @Roles(UserRole.GERENTE, UserRole.PMO, UserRole.COORDINADOR)
+    async createMilestone(
+        @Param('projectId') projectId: string,
+        @Body() milestoneData: any,
+        @Request() req: any
+    ) {
+        const id = await this.projectsService.createMilestone(
+            projectId,
+            milestoneData,
+            req.user.uid,
+            req.user.role
+        );
+        return { id, message: 'Milestone created successfully' };
     }
 
-    // Task Endpoints
+    @Get(':projectId/milestones')
+    async getMilestones(
+        @Param('projectId') projectId: string,
+        @Request() req: any
+    ) {
+        return this.projectsService.getMilestones(projectId, req.user.uid, req.user.role);
+    }
+
+    @Patch(':projectId/milestones/:milestoneId')
+    @Roles(UserRole.GERENTE, UserRole.PMO, UserRole.COORDINADOR)
+    async updateMilestoneStatus(
+        @Param('projectId') projectId: string,
+        @Param('milestoneId') milestoneId: string,
+        @Body('status') status: string,
+        @Request() req: any
+    ) {
+        await this.projectsService.updateMilestoneStatus(
+            projectId,
+            milestoneId,
+            status as any,
+            req.user.uid,
+            req.user.role
+        );
+        return { message: 'Milestone status updated successfully' };
+    }
+
+    // Task Endpoints (DEBEN IR ANTES DE :id genérico)
     @Post(':projectId/tasks')
     @Roles(UserRole.GERENTE, UserRole.PMO, UserRole.COORDINADOR, UserRole.SUPERVISOR)
     async addTask(@Param('projectId') projectId: string, @Body() taskData: any, @Request() req: any) {
@@ -75,4 +124,21 @@ export class ProjectsController {
         await this.projectsService.deleteTask(projectId, taskId, req.user.uid, req.user.role);
         return { message: 'Task deleted successfully' };
     }
+
+    // ========================================
+    // GENERIC PROJECT ENDPOINTS (DEBEN IR AL FINAL)
+    // ========================================
+
+    @Get(':id')
+    async findOne(@Param('id') id: string, @Request() req: any) {
+        return this.projectsService.findOne(id, req.user.uid, req.user.role);
+    }
+
+    @Patch(':id')
+    @Roles(UserRole.GERENTE, UserRole.PMO, UserRole.COORDINADOR, UserRole.SUPERVISOR)
+    async update(@Param('id') id: string, @Body() updateProjectDto: Partial<Project>, @Request() req: any) {
+        await this.projectsService.update(id, updateProjectDto, req.user.uid, req.user.role);
+        return { message: 'Project updated successfully' };
+    }
+
 }

@@ -143,7 +143,7 @@ export class UsersController {
                 resetLink
             };
         } catch (error: any) {
-            throw new Error(`Error inviting user: ${error.message}`);
+            throw new InternalServerErrorException(`Error inviting user: ${error.message}`);
         }
     }
 
@@ -178,7 +178,7 @@ export class UsersController {
 
             return { message: 'Invitación y registros eliminados exitosamente' };
         } catch (error: any) {
-            throw new Error(`Error deleting invitation: ${error.message}`);
+            throw new InternalServerErrorException(`Error deleting invitation: ${error.message}`);
         }
     }
     @Post('acknowledge-login')

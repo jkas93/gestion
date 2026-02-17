@@ -37,8 +37,12 @@ export class RRHHController {
 
     @Get('employees')
     @Roles(UserRole.GERENTE, UserRole.RRHH)
-    async findAll() {
-        return this.rrhhService.findAllEmployees();
+    async findAll(
+        @Query('limit') limit?: string,
+        @Query('cursor') cursor?: string
+    ) {
+        const pageSize = limit ? parseInt(limit, 10) : 50;
+        return this.rrhhService.findAllEmployees(pageSize, cursor);
     }
 
     @Patch('employees/:id')
@@ -76,11 +80,6 @@ export class RRHHController {
     }
 
     // --- Incident Endpoints ---
-    @Post('employees')
-    // @Roles(UserRole.GERENTE, UserRole.RRHH)
-    async createEmployee(@Body() data: any) {
-        return this.rrhhService.createEmployee(data);
-    }
     @Post('incidents')
     @Roles(UserRole.GERENTE, UserRole.RRHH)
     async createIncident(@Body() data: any) {
@@ -101,29 +100,5 @@ export class RRHHController {
         return { message: 'Incident status updated' };
     }
 
-    // --- Maintenance Endpoints ---
-    @Get('maintenance/analyze-duplicates')
-    @Roles(UserRole.GERENTE)
-    async analyzeDuplicates() {
-        return this.rrhhService.analyzeDuplicates();
-    }
 
-    @Post('maintenance/cleanup-duplicates')
-    @Roles(UserRole.GERENTE)
-    async cleanupDuplicates() {
-        return this.rrhhService.cleanupDuplicates();
-    }
-
-    // --- Deep Maintenance (Users + Employees) ---
-    @Get('maintenance/analyze-deep')
-    @Roles(UserRole.GERENTE)
-    async analyzeDeepConflicts() {
-        return this.rrhhService.analyzeDeepConflicts();
-    }
-
-    @Post('maintenance/cleanup-deep')
-    @Roles(UserRole.GERENTE)
-    async cleanupDeepConflicts() {
-        return this.rrhhService.cleanupDeepConflicts();
-    }
 }

@@ -7,25 +7,48 @@ export class RRHHService {
     constructor(
         private firebaseService: FirebaseService,
         private mailService: MailService
-    ) {
-        // Auto-limpieza de duplicados al iniciar el servicio
-        this.autoCleanupDuplicates();
-    }
+    ) { }
 
-    // Limpieza automática silenciosa en segundo plano
-    private async autoCleanupDuplicates() {
-        try {
-            console.log('🔍 Auto-verificando duplicados al iniciar...');
-            const result = await this.cleanupDuplicates();
-            if (result.deleted > 0) {
-                console.log(`✅ Auto-limpieza: Eliminados ${result.deleted} duplicados`);
-                console.log(`   - Por DNI: ${result.details.deletedByDni}`);
-                console.log(`   - Por Email: ${result.details.deletedByEmail}`);
-            } else {
-                console.log('✅ Base de datos limpia - No hay duplicados');
+    /**
+     * Valida que DNI y Email sean únicos en la base de datos
+     * @param dni - DNI a validar
+     * @param email - Email a validar
+     * @param excludeId - ID a excluir de la validación (para updates)
+     * @throws ConflictException si encuentra duplicados
+     */
+    private async validateUniqueFields(
+        dni?: string,
+        email?: string,
+        excludeId?: string
+    ): Promise<void> {
+        const db = this.firebaseService.getFirestore();
+
+        if (dni) {
+            const dniSnapshot = await db.collection('employees')
+                .where('dni', '==', dni)
+                .get();
+
+            const duplicates = dniSnapshot.docs.filter(doc => doc.id !== excludeId);
+            if (duplicates.length > 0) {
+                const existing = duplicates[0].data();
+                throw new ConflictException(
+                    `❌ DNI ${dni} ya está registrado por ${existing.name || 'otro empleado'}`
+                );
             }
-        } catch (error) {
-            console.error('❌ Error en auto-limpieza:', error.message);
+        }
+
+        if (email) {
+            const emailSnapshot = await db.collection('employees')
+                .where('email', '==', email)
+                .get();
+
+            const duplicates = emailSnapshot.docs.filter(doc => doc.id !== excludeId);
+            if (duplicates.length > 0) {
+                const existing = duplicates[0].data();
+                throw new ConflictException(
+                    `❌ Email ${email} ya está registrado por ${existing.name || 'otro empleado'}`
+                );
+            }
         }
     }
 
@@ -33,21 +56,8 @@ export class RRHHService {
         const firestore = this.firebaseService.getFirestore();
         const auth = this.firebaseService.getAuth();
 
-        // 1. Validaciones previas (Solo lectura)
-        if (data.dni) {
-            const dniSnapshot = await firestore.collection('employees').where('dni', '==', data.dni).get();
-            if (!dniSnapshot.empty) {
-                const existingEmployee = dniSnapshot.docs[0].data();
-                throw new ConflictException(`❌ DNI ${data.dni} ya registrado por ${existingEmployee.name}`);
-            }
-        }
-
-        if (data.email) {
-            const emailSnapshot = await firestore.collection('employees').where('email', '==', data.email).get();
-            if (!emailSnapshot.empty) {
-                throw new ConflictException(`❌ Email ${data.email} ya registrado como empleado.`);
-            }
-        }
+        // 1. Validación centralizada (ahora en una sola línea)
+        await this.validateUniqueFields(data.dni, data.email);
 
         let uid = '';
         let isNewAuthUser = false;
@@ -139,54 +149,104 @@ export class RRHHService {
         }
     }
 
+    /**
+     * Activa un usuario/empleado al iniciar sesión por primera vez.
+     * Verifica tanto la colección 'employees' (RRHH) como 'users' (sistema general).
+     * 
+     * Flujo:
+     * 1. Primero verifica 'employees' (prioridad para empleados con ficha laboral)
+     * 2. Si no existe, verifica 'users' (para usuarios invitados sin ficha)
+     * 3. Si no existe en ninguna, retorna silenciosamente (usuarios sin ficha tipo GERENTE)
+     * 
+     * @param id - UID del usuario
+     */
     async activateEmployee(id: string): Promise<void> {
         const firestore = this.firebaseService.getFirestore();
-        await firestore.collection('employees').doc(id).update({
-            status: 'ACTIVO',
-            lastLogin: new Date().toISOString()
-        });
-        console.log(`✅ Empleado activado: ${id}`);
+
+        // 1. Intentar activar en employees primero (RRHH - empleados con ficha laboral)
+        const employeeRef = firestore.collection('employees').doc(id);
+        const employeeDoc = await employeeRef.get();
+
+        if (employeeDoc.exists) {
+            const employeeData = employeeDoc.data();
+            // Solo actualizar si está en INVITADO
+            if (employeeData?.status === 'INVITADO') {
+                await employeeRef.update({
+                    status: 'ACTIVO',
+                    lastLogin: new Date().toISOString(),
+                    activatedAt: new Date().toISOString()
+                });
+                console.log(`✅ Empleado activado (employees): ${id}`);
+            } else {
+                // Ya está activo, solo actualizar lastLogin
+                await employeeRef.update({
+                    lastLogin: new Date().toISOString()
+                });
+            }
+            return;
+        }
+
+        // 2. Si no existe en employees, intentar en users (usuarios invitados sin ficha laboral)
+        const userRef = firestore.collection('users').doc(id);
+        const userDoc = await userRef.get();
+
+        if (userDoc.exists) {
+            const userData = userDoc.data();
+            // Solo activar si está en INVITADO
+            if (userData?.status === 'INVITADO') {
+                await userRef.update({
+                    status: 'ACTIVO',
+                    activatedAt: new Date().toISOString(),
+                    firstLoginAt: new Date().toISOString()
+                });
+                console.log(`✅ Usuario activado (users): ${id}`);
+            }
+            return;
+        }
+
+        // 3. Usuario sin ficha (ej: GERENTE que solo existe en Auth) - silencioso, no es error
+        console.log(`ℹ️ Usuario ${id} no requiere activación (sin ficha en employees/users)`);
     }
 
-    async findAllEmployees(): Promise<any[]> {
-        const firestore = this.firebaseService.getFirestore();
+    /**
+     * Obtiene lista paginada de empleados
+     * @param limit - Número máximo de empleados a retornar (default: 50)
+     * @param startAfter - ID del documento para iniciar después (cursor)
+     * @returns Lista de empleados con cursor para siguiente página
+     */
+    async findAllEmployees(
+        limit: number = 50,
+        startAfter?: string
+    ): Promise<{ employees: any[], nextCursor?: string }> {
+        const db = this.firebaseService.getFirestore();
 
-        // 1. Obtener todos los usuarios (legacy)
-        const usersSnapshot = await firestore.collection('users').get();
-        const usersMap = new Map();
-        usersSnapshot.docs.forEach(doc => {
-            usersMap.set(doc.id, { id: doc.id, ...doc.data() });
-        });
+        // Query paginada con ordenamiento
+        let query = db.collection('employees')
+            .orderBy('createdAt', 'desc')
+            .limit(limit + 1); // +1 para determinar si hay más páginas
 
-        // 2. Obtener todos los empleados (nueva fuente de verdad)
-        const employeesSnapshot = await firestore.collection('employees').get();
-        const employeesMap = new Map();
-        employeesSnapshot.docs.forEach(doc => {
-            employeesMap.set(doc.id, { id: doc.id, ...doc.data() });
-        });
+        // Si hay cursor, iniciar después de ese documento
+        if (startAfter) {
+            const startDoc = await db.collection('employees').doc(startAfter).get();
+            if (startDoc.exists) {
+                query = query.startAfter(startDoc);
+            }
+        }
 
-        // 3. Unificar: Usar Set de IDs para cubrir ambos casos (Legacy + Nuevos)
-        const allIds = new Set([...usersMap.keys(), ...employeesMap.keys()]);
-        const unifiedList: any[] = [];
+        const snapshot = await query.get();
+        const docs = snapshot.docs;
 
-        allIds.forEach(id => {
-            const userData = usersMap.get(id) || {};
-            const employeeData = employeesMap.get(id) || {};
+        // Determinar si hay más páginas
+        const hasMore = docs.length > limit;
+        const employees = docs.slice(0, limit).map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        }));
 
-            // Lógica de estado compatible (PENDIENTE -> INVITADO para frontend)
-            let status = employeeData.status || userData.status || 'ACTIVO';
-            if (status === 'PENDIENTE') status = 'INVITADO';
-
-            unifiedList.push({
-                ...userData,      // Datos básicos legacy
-                ...employeeData,  // Datos nuevos (sobrescriben)
-                id,
-                status,
-                hasLaborProfile: !!employeesMap.get(id)
-            });
-        });
-
-        return unifiedList;
+        return {
+            employees,
+            nextCursor: hasMore ? docs[limit - 1].id : undefined
+        };
     }
 
 
@@ -194,29 +254,8 @@ export class RRHHService {
     async updateEmployee(id: string, data: any): Promise<void> {
         const firestore = this.firebaseService.getFirestore();
 
-        // VALIDACIÓN ESTRICTA: DNI debe ser ÚNICO (independiente del email)
-        if (data.dni) {
-            const dniSnapshot = await firestore.collection('employees').where('dni', '==', data.dni).get();
-            if (!dniSnapshot.empty && dniSnapshot.docs[0].id !== id) {
-                const existingEmployee = dniSnapshot.docs[0].data();
-                throw new ConflictException(
-                    `❌ DNI ${data.dni} ya está registrado por ${existingEmployee.name || 'otro empleado'} (ID: ${dniSnapshot.docs[0].id}). ` +
-                    `No se permite duplicar DNIs bajo ninguna circunstancia.`
-                );
-            }
-        }
-
-        // VALIDACIÓN ESTRICTA: Email debe ser ÚNICO (independiente del DNI)
-        if (data.email) {
-            const emailSnapshot = await firestore.collection('employees').where('email', '==', data.email).get();
-            if (!emailSnapshot.empty && emailSnapshot.docs[0].id !== id) {
-                const existingEmployee = emailSnapshot.docs[0].data();
-                throw new ConflictException(
-                    `❌ Email ${data.email} ya está registrado por ${existingEmployee.name || 'otro empleado'} (ID: ${emailSnapshot.docs[0].id}). ` +
-                    `No se permite duplicar emails bajo ninguna circunstancia.`
-                );
-            }
-        }
+        // Validación centralizada (excluyendo el propio empleado)
+        await this.validateUniqueFields(data.dni, data.email, id);
 
         await firestore.collection('employees').doc(id).update(data);
         console.log(`✅ Empleado actualizado: ID ${id}`);
@@ -260,281 +299,7 @@ export class RRHHService {
         console.log(`🗑️ Ficha de empleado eliminada: ${id}`);
     }
 
-    // --- Deep Analysis & Cleanup ---
-    async analyzeDeepConflicts(): Promise<any> {
-        const firestore = this.firebaseService.getFirestore();
 
-        // 1. Obtener TODOS los usuarios (Auth/Acceso)
-        const usersSnapshot = await firestore.collection('users').get();
-        const users = usersSnapshot.docs.map(doc => ({ source: 'users', id: doc.id, ...doc.data() as any }));
-
-        // 2. Obtener TODOS los empleados (Ficha Laboral)
-        const employeesSnapshot = await firestore.collection('employees').get();
-        const employees = employeesSnapshot.docs.map(doc => ({ source: 'employees', id: doc.id, ...doc.data() as any }));
-
-        // 3. Unificar todo por Email
-        const emailMap = new Map<string, any[]>();
-        const allRecords = [...users, ...employees];
-
-        allRecords.forEach(rec => {
-            if (rec.email) {
-                const normEmail = String(rec.email).trim().toLowerCase();
-                const list = emailMap.get(normEmail) || [];
-                list.push(rec);
-                emailMap.set(normEmail, list);
-            }
-        });
-
-        // 4. Detectar conflictos (Email repetido en IDs diferentes)
-        const conflicts: any[] = [];
-
-        for (const [email, list] of emailMap.entries()) {
-            const uniqueIds = new Set(list.map(r => r.id));
-
-            if (uniqueIds.size > 1) {
-                conflicts.push({
-                    email,
-                    uniqueIds: Array.from(uniqueIds),
-                    records: list.map(r => ({
-                        id: r.id,
-                        source: r.source,
-                        name: r.name || 'Sin nombre',
-                        createdAt: r.createdAt
-                    }))
-                });
-            }
-        }
-
-        return {
-            usersCount: users.length,
-            employeesCount: employees.length,
-            uniqueEmails: emailMap.size,
-            conflictsCount: conflicts.length,
-            conflicts
-        };
-    }
-
-    async cleanupDeepConflicts(): Promise<any> {
-        const analysis = await this.analyzeDeepConflicts();
-        const firestore = this.firebaseService.getFirestore();
-        const deletedIds = new Set<string>();
-        let deletedUsers = 0;
-        let deletedEmployees = 0;
-
-        for (const conflict of analysis.conflicts) {
-            const records = conflict.records;
-
-            // Ordenar: Más reciente primero
-            records.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
-
-            // Quedarse con el PRIMERO (Más nuevo)
-            const losers = records.slice(1);
-
-            for (const loser of losers) {
-                if (!deletedIds.has(loser.id)) {
-                    if (loser.source === 'users') {
-                        await firestore.collection('users').doc(loser.id).delete();
-                        deletedUsers++;
-                    } else {
-                        await firestore.collection('employees').doc(loser.id).delete();
-                        deletedEmployees++;
-                    }
-                    deletedIds.add(loser.id);
-                    console.log(`🗑️ Eliminado conflicto: ${loser.source} ID ${loser.id} (${conflict.email})`);
-                }
-            }
-        }
-
-        return {
-            message: `Limpieza profunda completada. Eliminados ${deletedUsers} usuarios y ${deletedEmployees} fichas laborales en conflicto.`,
-            deletedUsers,
-            deletedEmployees
-        };
-    }
-
-    // --- Maintenance ---
-    async analyzeDuplicates(): Promise<{ hasDuplicates: boolean, summary: any, dniDuplicates: any[], emailDuplicates: any[] }> {
-        const firestore = this.firebaseService.getFirestore();
-        const snapshot = await firestore.collection('employees').get();
-        const employees = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() as any }));
-
-        const dniMap = new Map<string, any[]>();
-        const emailMap = new Map<string, any[]>();
-
-        // Agrupar por DNI y Email (NORMALIZADO)
-        employees.forEach(emp => {
-            if (emp.dni) {
-                const normalizedDni = String(emp.dni).trim();
-                const list = dniMap.get(normalizedDni) || [];
-                list.push(emp);
-                dniMap.set(normalizedDni, list);
-            }
-            if (emp.email) {
-                const normalizedEmail = String(emp.email).trim().toLowerCase();
-                const list = emailMap.get(normalizedEmail) || [];
-                list.push(emp);
-                emailMap.set(normalizedEmail, list);
-            }
-        });
-
-        const dniDuplicates: any[] = [];
-        const emailDuplicates: any[] = [];
-        let totalDniRecordsToDelete = 0;
-        let totalEmailRecordsToDelete = 0;
-
-        // Analizar DNI duplicados
-        for (const [dni, list] of dniMap.entries()) {
-            if (list.length > 1) {
-                list.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
-                totalDniRecordsToDelete += (list.length - 1);
-
-                dniDuplicates.push({
-                    dni,
-                    count: list.length,
-                    toDelete: list.length - 1,
-                    records: list.map((emp, index) => ({
-                        id: emp.id,
-                        originalDni: emp.dni,
-                        name: emp.name || 'Sin nombre',
-                        email: emp.email,
-                        createdAt: emp.createdAt,
-                        willKeep: index === 0
-                    }))
-                });
-            }
-        }
-
-        // Analizar Email duplicados
-        for (const [email, list] of emailMap.entries()) {
-            if (list.length > 1) {
-                list.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
-                totalEmailRecordsToDelete += (list.length - 1);
-
-                emailDuplicates.push({
-                    email,
-                    count: list.length,
-                    toDelete: list.length - 1,
-                    records: list.map((emp, index) => ({
-                        id: emp.id,
-                        originalEmail: emp.email,
-                        name: emp.name || 'Sin nombre',
-                        dni: emp.dni,
-                        createdAt: emp.createdAt,
-                        willKeep: index === 0
-                    }))
-                });
-            }
-        }
-
-        return {
-            hasDuplicates: dniDuplicates.length > 0 || emailDuplicates.length > 0,
-            summary: {
-                totalEmployees: employees.length,
-                dniDuplicatesCount: dniDuplicates.length,
-                emailDuplicatesCount: emailDuplicates.length,
-                totalRecordsToDelete: totalDniRecordsToDelete + totalEmailRecordsToDelete
-            },
-            dniDuplicates,
-            emailDuplicates
-        };
-    }
-
-    async cleanupDuplicates(): Promise<{ deleted: number, details: any, message: string }> {
-        const firestore = this.firebaseService.getFirestore();
-        const snapshot = await firestore.collection('employees').get();
-        const employees = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() as any }));
-
-        const dniMap = new Map<string, any[]>();
-        const emailMap = new Map<string, any[]>();
-        const deletedIds = new Set<string>();
-
-        let deletedByDni = 0;
-        let deletedByEmail = 0;
-        const details: any[] = [];
-
-        // Group by DNI and Email (NORMALIZADO)
-        employees.forEach(emp => {
-            if (emp.dni) {
-                const normalizedDni = String(emp.dni).trim();
-                const list = dniMap.get(normalizedDni) || [];
-                list.push(emp);
-                dniMap.set(normalizedDni, list);
-            }
-            if (emp.email) {
-                const normalizedEmail = String(emp.email).trim().toLowerCase();
-                const list = emailMap.get(normalizedEmail) || [];
-                list.push(emp);
-                emailMap.set(normalizedEmail, list);
-            }
-        });
-
-        // Process DNI duplicates
-        for (const [dni, list] of dniMap.entries()) {
-            if (list.length > 1) {
-                list.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
-
-                const toKeep = list[0];
-                const toDelete = list.slice(1);
-
-                for (const emp of toDelete) {
-                    if (!deletedIds.has(emp.id)) {
-                        await firestore.collection('employees').doc(emp.id).delete();
-                        deletedIds.add(emp.id);
-                        deletedByDni++;
-                        details.push({
-                            reason: 'DNI duplicado',
-                            dni: emp.dni,
-                            matchDni: dni,
-                            email: emp.email,
-                            name: emp.name || 'Sin nombre',
-                            id: emp.id,
-                            kept: toKeep.id
-                        });
-                        console.log(`🗑️ DNI: Eliminado ${emp.dni} (ID: ${emp.id}), conservado ID: ${toKeep.id}`);
-                    }
-                }
-            }
-        }
-
-        // Process Email duplicates
-        for (const [email, list] of emailMap.entries()) {
-            const activeList = list.filter(emp => !deletedIds.has(emp.id));
-
-            if (activeList.length > 1) {
-                activeList.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
-
-                const toKeep = activeList[0];
-                const toDelete = activeList.slice(1);
-
-                for (const emp of toDelete) {
-                    await firestore.collection('employees').doc(emp.id).delete();
-                    deletedIds.add(emp.id);
-                    deletedByEmail++;
-                    details.push({
-                        reason: 'Email duplicado',
-                        dni: emp.dni,
-                        email: emp.email,
-                        matchEmail: email,
-                        name: emp.name || 'Sin nombre',
-                        id: emp.id,
-                        kept: toKeep.id
-                    });
-                    console.log(`🗑️ EMAIL: Eliminado ${emp.email} (ID: ${emp.id}), conservado ID: ${toKeep.id}`);
-                }
-            }
-        }
-
-        const totalDeleted = deletedIds.size;
-        return {
-            deleted: totalDeleted,
-            details: {
-                deletedByDni,
-                deletedByEmail,
-                records: details
-            },
-            message: `Limpieza completada. Eliminados ${totalDeleted} registros duplicados (${deletedByDni} por DNI, ${deletedByEmail} por email).`
-        };
-    }
 
     // --- Attendance Management ---
     async recordAttendance(data: any): Promise<string> {
