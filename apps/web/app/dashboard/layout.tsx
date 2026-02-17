@@ -36,6 +36,32 @@ export default function DashboardLayout({
         }
     }, [user, loading, router]);
 
+    // Auto-activate user on login (silent background check)
+    useEffect(() => {
+        const activateUser = async () => {
+            if (user) {
+                try {
+                    const token = await user.getIdToken();
+                    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001';
+                    await fetch(`${apiUrl}/users/acknowledge-login`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify({ uid: user.uid })
+                    });
+                } catch (error) {
+                    console.error("Auto-activation check failed:", error);
+                }
+            }
+        };
+
+        if (user && !loading) {
+            activateUser();
+        }
+    }, [user, loading]);
+
     if (loading) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-background">

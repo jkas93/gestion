@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { UserRole, Attendance, Incident, EmployeeSchema } from "@erp/shared";
 import { auth } from "@/lib/firebase/clientApp";
 import { useToast } from "@/hooks/useToast";
-import { Users, Clock, AlertCircle, FileText, CheckCircle, XCircle } from "lucide-react";
+import { Users, Clock, AlertCircle, FileText, CheckCircle, XCircle, Edit, Trash, MoreVertical, Eye, UserPlus } from "lucide-react";
 
 export default function RRHHPage() {
     const { user, role } = useAuth();
@@ -147,7 +147,8 @@ export default function RRHHPage() {
             if (!user) return;
             const idToken = await user.getIdToken();
 
-            const res = await fetch(`${API_URL}/users/invite/${uid}`, {
+            // UNIFICACIÓN: Endpoint correcto para borrar empleado (y su invitación)
+            const res = await fetch(`${API_URL}/rrhh/employees/${uid}`, {
                 method: "DELETE",
                 headers: {
                     Authorization: `Bearer ${idToken}`,
@@ -230,9 +231,16 @@ export default function RRHHPage() {
                                                 {emp.name ? emp.name[0] : '?'}
                                             </div>
                                             <div>
-                                                <div className="font-bold tracking-tight text-gray-900">{emp.name}</div>
+                                                <div className="font-bold tracking-tight text-gray-900 flex items-center gap-2">
+                                                    {emp.name}
+                                                    {emp.status === 'INVITADO' ? (
+                                                        <span className="px-1.5 py-0.5 rounded text-[9px] bg-blue-100 text-blue-600 font-extrabold uppercase tracking-wide border border-blue-200">Invitado</span>
+                                                    ) : (
+                                                        <span className="px-1.5 py-0.5 rounded text-[9px] bg-emerald-100 text-emerald-600 font-extrabold uppercase tracking-wide border border-emerald-200">Activo</span>
+                                                    )}
+                                                </div>
                                                 {!emp.hasLaborProfile && (
-                                                    <div className="text-[9px] text-amber-500 font-bold uppercase tracking-tighter">Sin ficha laboral</div>
+                                                    <div className="text-[9px] text-amber-500 font-bold uppercase tracking-tighter mt-0.5">Sin ficha laboral</div>
                                                 )}
                                             </div>
                                         </div>
@@ -252,7 +260,53 @@ export default function RRHHPage() {
                                     </td>
                                     <td className="text-gray-500 text-sm font-medium italic">{emp.email}</td>
                                     <td className="text-right font-mono text-emerald-600 font-bold">
-                                        {emp.salary ? `S/ ${emp.salary}` : '---'}
+                                        {emp.salary ? `S/ ${emp.salary.toFixed(2)}` : '---'}
+                                    </td>
+                                    <td className="text-center">
+                                        {canEdit && (
+                                            <div className="relative group inline-block">
+                                                <button
+                                                    className="p-2 hover:bg-gray-100 rounded-lg transition-all text-gray-400 hover:text-gray-700"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        // Toggle logic using state or direct DOM manipulation is fine, but lets ensure we close others
+                                                        const target = e.currentTarget.nextElementSibling as HTMLElement;
+                                                        // Close all other open dropdowns first for better UX
+                                                        document.querySelectorAll('.dropdown-menu-content').forEach(el => {
+                                                            if (el !== target) el.classList.add('hidden');
+                                                        });
+                                                        target?.classList.toggle('hidden');
+                                                    }}
+                                                >
+                                                    <MoreVertical className="w-5 h-5" />
+                                                </button>
+                                                <div
+                                                    className={`dropdown-menu-content hidden absolute right-0 w-56 bg-white rounded-2xl shadow-xl border border-gray-100 py-2 z-50 ${i >= employees.length - 2 && employees.length > 2 ? 'bottom-full mb-2 origin-bottom-right' : 'top-full mt-2 origin-top-right'}`}
+                                                    onMouseLeave={(e) => e.currentTarget.classList.add('hidden')}
+                                                >
+                                                    <button
+                                                        onClick={() => router.push(`/dashboard/rrhh/${emp.id}`)}
+                                                        className="w-full px-4 py-2.5 text-left text-sm font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-3 transition-colors"
+                                                    >
+                                                        <Eye className="w-4 h-4 text-blue-600" />
+                                                        <span>Ver Ficha Laboral</span>
+                                                    </button>
+                                                    {/* Mostrar 'Eliminar Invitación' ÚNICAMENTE si el estado es INVITADO (usuario no ha ingresado aún) */}
+                                                    {emp.status === 'INVITADO' && (
+                                                        <>
+                                                            <div className="my-1 h-px bg-gray-100"></div>
+                                                            <button
+                                                                onClick={() => handleDeleteInvite(emp.id)}
+                                                                className="w-full px-4 py-2.5 text-left text-sm font-medium text-red-600 hover:bg-red-50 flex items-center gap-3 transition-colors"
+                                                            >
+                                                                <Trash className="w-4 h-4" />
+                                                                <span>Eliminar Invitación</span>
+                                                            </button>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
                                     </td>
                                 </tr>
                             ))}

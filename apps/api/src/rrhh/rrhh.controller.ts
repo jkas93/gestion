@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Patch, UseGuards, UsePipes } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Patch, Delete, UseGuards, UsePipes, Query, Req } from '@nestjs/common';
 import { RRHHService } from './rrhh.service';
 import { FirebaseAuthGuard } from '../auth/firebase-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -12,12 +12,27 @@ import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 export class RRHHController {
     constructor(private readonly rrhhService: RRHHService) { }
 
+    @Get('check-existence')
+    @Roles(UserRole.GERENTE, UserRole.RRHH)
+    async checkExistence(@Query('dni') dni?: string, @Query('email') email?: string) {
+        return this.rrhhService.checkExistence(dni, email);
+    }
+
     @Post('employees')
     @Roles(UserRole.GERENTE, UserRole.RRHH)
     @UsePipes(new ZodValidationPipe(EmployeeSchema))
     async create(@Body() data: CreateEmployeeDto) {
         const id = await this.rrhhService.createEmployee(data);
         return { id, message: 'Employee registered successfully' };
+    }
+
+    // --- Self-Activation Endpoint ---
+    @Post('activate')
+    async activate(@Req() req: any) {
+        // El usuario se activa a sí mismo al hacer login por primera vez
+        const uid = req.user.uid;
+        await this.rrhhService.activateEmployee(uid);
+        return { message: 'Cuenta activada y confirmada' };
     }
 
     @Get('employees')
@@ -31,6 +46,19 @@ export class RRHHController {
     async update(@Param('id') id: string, @Body() data: any) {
         await this.rrhhService.updateEmployee(id, data);
         return { message: 'Employee updated' };
+    }
+
+    @Get('employees/:id')
+    @Roles(UserRole.GERENTE, UserRole.RRHH)
+    async findOne(@Param('id') id: string) {
+        return this.rrhhService.findOneEmployee(id);
+    }
+
+    @Delete('employees/:id')
+    @Roles(UserRole.GERENTE)
+    async delete(@Param('id') id: string) {
+        await this.rrhhService.deleteEmployee(id);
+        return { message: 'Employee deleted successfully' };
     }
 
     // --- Attendance Endpoints ---
@@ -48,6 +76,11 @@ export class RRHHController {
     }
 
     // --- Incident Endpoints ---
+    @Post('employees')
+    // @Roles(UserRole.GERENTE, UserRole.RRHH)
+    async createEmployee(@Body() data: any) {
+        return this.rrhhService.createEmployee(data);
+    }
     @Post('incidents')
     @Roles(UserRole.GERENTE, UserRole.RRHH)
     async createIncident(@Body() data: any) {
@@ -66,5 +99,31 @@ export class RRHHController {
     async updateIncidentStatus(@Param('id') id: string, @Body('status') status: string) {
         await this.rrhhService.updateIncidentStatus(id, status);
         return { message: 'Incident status updated' };
+    }
+
+    // --- Maintenance Endpoints ---
+    @Get('maintenance/analyze-duplicates')
+    @Roles(UserRole.GERENTE)
+    async analyzeDuplicates() {
+        return this.rrhhService.analyzeDuplicates();
+    }
+
+    @Post('maintenance/cleanup-duplicates')
+    @Roles(UserRole.GERENTE)
+    async cleanupDuplicates() {
+        return this.rrhhService.cleanupDuplicates();
+    }
+
+    // --- Deep Maintenance (Users + Employees) ---
+    @Get('maintenance/analyze-deep')
+    @Roles(UserRole.GERENTE)
+    async analyzeDeepConflicts() {
+        return this.rrhhService.analyzeDeepConflicts();
+    }
+
+    @Post('maintenance/cleanup-deep')
+    @Roles(UserRole.GERENTE)
+    async cleanupDeepConflicts() {
+        return this.rrhhService.cleanupDeepConflicts();
     }
 }

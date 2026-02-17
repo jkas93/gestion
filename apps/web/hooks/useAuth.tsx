@@ -27,6 +27,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                 const token = await user.getIdTokenResult();
                 setUser(user);
                 setRole((token.claims.role as string) || null);
+
+                // Auto-Activación de cuenta (Restauración de ciclo de vida Invitado -> Activo)
+                const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4001";
+                fetch(`${API_URL}/rrhh/activate`, {
+                    method: 'POST',
+                    headers: { Authorization: `Bearer ${await user.getIdToken()}` }
+                }).catch(e => console.warn("Background activation check failed", e));
             } else {
                 setUser(null);
                 setRole(null);
