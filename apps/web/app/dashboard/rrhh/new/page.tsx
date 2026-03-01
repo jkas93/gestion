@@ -39,6 +39,24 @@ export default function NewEmployeePage() {
 
     const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4001";
 
+    const checkUniqueness = async (field: 'dni' | 'email', value: string) => {
+        if (!value) return;
+        try {
+            const idToken = await auth.currentUser?.getIdToken();
+            const res = await fetch(`${API_URL}/rrhh/check-existence?${field}=${value}`, {
+                headers: { Authorization: `Bearer ${idToken}` },
+            });
+            if (res.ok) {
+                const data = await res.json();
+                if (data.exists) {
+                    showToast(`Este ${data.field} ya está registrado por ${data.name}`, "error");
+                }
+            }
+        } catch (error) {
+            console.error("Error checking uniqueness:", error);
+        }
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
@@ -57,28 +75,8 @@ export default function NewEmployeePage() {
         try {
             const idToken = await auth.currentUser?.getIdToken();
 
-            // 1. Invite to ERP (Auth + Users Profile)
-            const inviteRes = await fetch(`${API_URL}/users/invite`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${idToken}`,
-                },
-                body: JSON.stringify({
-                    email: formData.email,
-                    name: `${formData.name} ${formData.lastName}`,
-                    role: formData.role
-                }),
-            });
-
-            if (!inviteRes.ok) {
-                const err = await inviteRes.json();
-                throw new Error(err.message || "Error al crear cuenta de acceso");
-            }
-
-            const { uid, resetLink } = await inviteRes.json();
-
-            // 2. Register complete Employee data
+            // UNIFICACIÓN: Solo llamamos al endpoint de empleados.
+            // El backend se encarga de crear el usuario Auth, enviar correo y crear ficha.
             const employeeRes = await fetch(`${API_URL}/rrhh/employees`, {
                 method: "POST",
                 headers: {
@@ -87,15 +85,18 @@ export default function NewEmployeePage() {
                 },
                 body: JSON.stringify({
                     ...formData,
-                    id: uid, // Linked to Auth
-                    salary: Number(formData.salary)
+                    salary: Number(formData.salary),
+                    // Enviamos rol explícitamente para que el backend lo configure
+                    role: formData.role
                 }),
             });
 
             if (employeeRes.ok) {
-                showToast("Colaborador registrado exitosamente", "success");
-                console.log("Link de bienvenida:", resetLink);
+                showToast("Colaborador registrado exitosamente (Acceso enviado por correo)", "success");
                 router.push("/dashboard/rrhh");
+            } else {
+                const err = await employeeRes.json();
+                throw new Error(err.message || "Error al registrar colaborador");
             }
         } catch (error: any) {
             showToast(error.message || "Error en el registro", "error");
@@ -164,6 +165,7 @@ export default function NewEmployeePage() {
                                         className="w-full bg-gray-50 border border-gray-100 rounded-2xl pl-14 pr-6 py-4 outline-none focus:ring-2 focus:ring-primary transition-all font-bold text-gray-900"
                                         value={formData.dni}
                                         onChange={e => setFormData({ ...formData, dni: e.target.value })}
+                                        onBlur={e => checkUniqueness('dni', e.target.value)}
                                         placeholder="00000000"
                                     />
                                 </div>
@@ -266,6 +268,7 @@ export default function NewEmployeePage() {
                                         className="w-full bg-white/5 border border-white/10 rounded-2xl pl-14 pr-6 py-4 outline-none focus:ring-2 focus:ring-primary transition-all font-bold text-white placeholder:text-gray-600"
                                         value={formData.email}
                                         onChange={e => setFormData({ ...formData, email: e.target.value })}
+                                        onBlur={e => checkUniqueness('email', e.target.value)}
                                         placeholder="usuario@goldentower.pe"
                                     />
                                 </div>
@@ -275,12 +278,12 @@ export default function NewEmployeePage() {
                                 <label className="text-[10px] font-black uppercase tracking-widest text-gray-500 ml-2">Rol Jerárquico</label>
                                 <select
                                     required
-                                    className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 outline-none focus:ring-2 focus:ring-primary transition-all font-bold text-white appearance-none cursor-pointer"
+                                    className="w-full bg-white border border-gray-200 rounded-2xl px-6 py-4 outline-none focus:ring-2 focus:ring-primary transition-all font-bold text-gray-900 appearance-none cursor-pointer"
                                     value={formData.role}
                                     onChange={e => setFormData({ ...formData, role: e.target.value as UserRole })}
                                 >
                                     {Object.values(UserRole).map(r => (
-                                        <option key={r} value={r} className="bg-gray-900 text-white">{r}</option>
+                                        <option key={r} value={r} className="text-gray-900">{r}</option>
                                     ))}
                                 </select>
                             </div>

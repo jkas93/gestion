@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { UserRole, Attendance, Incident, EmployeeSchema } from "@erp/shared";
 import { auth } from "@/lib/firebase/clientApp";
 import { useToast } from "@/hooks/useToast";
-import { Users, Clock, AlertCircle, FileText, CheckCircle, XCircle } from "lucide-react";
+import { Users, Clock, AlertCircle, FileText, CheckCircle, XCircle, Edit, Trash, MoreVertical, Eye, UserPlus } from "lucide-react";
 
 export default function RRHHPage() {
     const { user, role } = useAuth();
@@ -39,10 +39,20 @@ export default function RRHHPage() {
             const currentUser = auth.currentUser;
             if (!currentUser) return;
             const idToken = await currentUser.getIdToken();
-            const res = await fetch(`${API_URL}/rrhh/employees`, {
+            // Default limit 50 for initial load
+            const res = await fetch(`${API_URL}/rrhh/employees?limit=50`, {
                 headers: { Authorization: `Bearer ${idToken}` },
             });
-            if (res.ok) setEmployees(await res.json());
+            if (res.ok) {
+                const data = await res.json();
+                if (data.employees && Array.isArray(data.employees)) {
+                    setEmployees(data.employees);
+                } else if (Array.isArray(data)) {
+                    setEmployees(data);
+                } else {
+                    setEmployees([]);
+                }
+            }
         } catch (error) {
             showToast("Error al cargar empleados", "error");
         }
@@ -139,6 +149,34 @@ export default function RRHHPage() {
         }
     };
 
+    const handleDeleteInvite = async (uid: string) => {
+        if (!window.confirm("¿Estás seguro de que deseas eliminar esta invitación? Esta acción no se puede deshacer.")) return;
+
+        try {
+            const user = auth.currentUser;
+            if (!user) return;
+            const idToken = await user.getIdToken();
+
+            // UNIFICACIÓN: Endpoint correcto para borrar empleado (y su invitación)
+            const res = await fetch(`${API_URL}/rrhh/employees/${uid}`, {
+                method: "DELETE",
+                headers: {
+                    Authorization: `Bearer ${idToken}`,
+                },
+            });
+
+            if (res.ok) {
+                showToast("Invitación eliminada exitosamente", "success");
+                fetchEmployees();
+            } else {
+                const error = await res.json();
+                showToast(error.message || "Error al eliminar la invitación", "error");
+            }
+        } catch (error) {
+            showToast("Error de conexión", "error");
+        }
+    };
+
     const canEdit = role === UserRole.GERENTE || role === UserRole.RRHH;
 
     return (
@@ -191,6 +229,7 @@ export default function RRHHPage() {
                                 <th>Posición</th>
                                 <th>Contacto</th>
                                 <th className="text-right">Remuneración</th>
+                                <th className="text-center w-20">Acciones</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
@@ -199,18 +238,86 @@ export default function RRHHPage() {
                                     <td>
                                         <div className="flex items-center gap-3">
                                             <div className="w-10 h-10 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center font-bold text-xs text-primary">
-                                                {emp.name[0]}
+                                                {emp.name ? emp.name[0] : '?'}
                                             </div>
-                                            <span className="font-bold tracking-tight text-gray-900">{emp.name}</span>
+                                            <div>
+                                                <div className="font-bold tracking-tight text-gray-900 flex items-center gap-2">
+                                                    {emp.name}
+                                                    {emp.status === 'INVITADO' ? (
+                                                        <span className="px-1.5 py-0.5 rounded text-[9px] bg-blue-100 text-blue-600 font-extrabold uppercase tracking-wide border border-blue-200">Invitado</span>
+                                                    ) : (
+                                                        <span className="px-1.5 py-0.5 rounded text-[9px] bg-emerald-100 text-emerald-600 font-extrabold uppercase tracking-wide border border-emerald-200">Activo</span>
+                                                    )}
+                                                </div>
+                                                {!emp.hasLaborProfile && (
+                                                    <div className="text-[9px] text-amber-500 font-bold uppercase tracking-tighter mt-0.5">Sin ficha laboral</div>
+                                                )}
+                                            </div>
                                         </div>
                                     </td>
                                     <td>
-                                        <span className="px-3 py-1 bg-gray-100 text-gray-700 rounded-lg text-[10px] font-bold border border-gray-200 uppercase tracking-tighter">
+                                        <span className={`px-3 py-1 rounded-lg text-[10px] font-bold border uppercase tracking-tighter ${emp.role?.toUpperCase() === UserRole.GERENTE ? 'bg-red-50 text-red-600 border-red-100' :
+                                            emp.role?.toUpperCase() === UserRole.PMO ? 'bg-orange-50 text-orange-600 border-orange-100' :
+                                                emp.role?.toUpperCase() === UserRole.COORDINADOR ? 'bg-blue-50 text-blue-600 border-blue-100' :
+                                                    emp.role?.toUpperCase() === UserRole.RRHH ? 'bg-purple-50 text-purple-600 border-purple-100' :
+                                                        emp.role?.toUpperCase() === UserRole.SIG ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
+                                                            emp.role?.toUpperCase() === UserRole.CALIDAD ? 'bg-yellow-50 text-yellow-600 border-yellow-100' :
+                                                                emp.role?.toUpperCase() === UserRole.ASISTENTE ? 'bg-cyan-50 text-cyan-600 border-cyan-100' :
+                                                                    'bg-gray-100 text-gray-700 border-gray-200'
+                                            }`}>
                                             {emp.role}
                                         </span>
                                     </td>
                                     <td className="text-gray-500 text-sm font-medium italic">{emp.email}</td>
-                                    <td className="text-right font-mono text-emerald-600 font-bold">${emp.salary}</td>
+                                    <td className="text-right font-mono text-emerald-600 font-bold">
+                                        {emp.salary ? `S/ ${emp.salary.toFixed(2)}` : '---'}
+                                    </td>
+                                    <td className="text-center">
+                                        {canEdit && (
+                                            <div className="relative group inline-block">
+                                                <button
+                                                    className="p-2 hover:bg-gray-100 rounded-lg transition-all text-gray-400 hover:text-gray-700"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        // Toggle logic using state or direct DOM manipulation is fine, but lets ensure we close others
+                                                        const target = e.currentTarget.nextElementSibling as HTMLElement;
+                                                        // Close all other open dropdowns first for better UX
+                                                        document.querySelectorAll('.dropdown-menu-content').forEach(el => {
+                                                            if (el !== target) el.classList.add('hidden');
+                                                        });
+                                                        target?.classList.toggle('hidden');
+                                                    }}
+                                                >
+                                                    <MoreVertical className="w-5 h-5" />
+                                                </button>
+                                                <div
+                                                    className={`dropdown-menu-content hidden absolute right-0 w-56 bg-white rounded-2xl shadow-xl border border-gray-100 py-2 z-50 ${i >= employees.length - 2 && employees.length > 2 ? 'bottom-full mb-2 origin-bottom-right' : 'top-full mt-2 origin-top-right'}`}
+                                                    onMouseLeave={(e) => e.currentTarget.classList.add('hidden')}
+                                                >
+                                                    <button
+                                                        onClick={() => router.push(`/dashboard/rrhh/${emp.id}`)}
+                                                        className="w-full px-4 py-2.5 text-left text-sm font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-3 transition-colors"
+                                                    >
+                                                        <Eye className="w-4 h-4 text-blue-600" />
+                                                        <span>Ver Ficha Laboral</span>
+                                                    </button>
+                                                    {/* Mostrar 'Eliminar Invitación' ÚNICAMENTE si el estado es INVITADO (usuario no ha ingresado aún) */}
+                                                    {emp.status === 'INVITADO' && (
+                                                        <>
+                                                            <div className="my-1 h-px bg-gray-100"></div>
+                                                            <button
+                                                                onClick={() => handleDeleteInvite(emp.id)}
+                                                                className="w-full px-4 py-2.5 text-left text-sm font-medium text-red-600 hover:bg-red-50 flex items-center gap-3 transition-colors"
+                                                            >
+                                                                <Trash className="w-4 h-4" />
+                                                                <span>Eliminar Invitación</span>
+                                                            </button>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>

@@ -44,15 +44,25 @@ export default function ProjectsPage() {
     const fetchProjects = async () => {
         try {
             const idToken = await auth.currentUser?.getIdToken();
-            const res = await fetch(`${API_URL}/projects`, {
+            // Default 50 to maximize initial load without heavy query strings
+            const data = await (await fetch(`${API_URL}/projects?limit=50`, {
                 headers: { Authorization: `Bearer ${idToken}` },
-            });
-            if (res.ok) {
-                setProjects(await res.json());
+            })).json();
+
+            // Handle API response { projects: [], nextCursor: ... } vs legacy [].
+            if (data.projects && Array.isArray(data.projects)) {
+                setProjects(data.projects);
+                // TODO: Store data.nextCursor for pagination feature
+            } else if (Array.isArray(data)) {
+                // Fallback for older API version or unexpected array response
+                setProjects(data);
             } else {
-                showToast("Error al cargar proyectos", "error");
+                setProjects([]); // Default empty array if format is unknown
+                if (!Array.isArray(data)) console.warn('Expected array or {projects: []} but got', data);
             }
+
         } catch (error) {
+            console.error(error);
             showToast("Error de conexión con el servidor", "error");
         }
     };

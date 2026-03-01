@@ -1,0 +1,8 @@
+8b96762 Actualiza dashboard y ajustes en API
+apps/api/package.json
+apps/api/src/main.ts
+apps/api/test-db.js
+apps/web/app/dashboard/layout.tsx
+apps/web/components/Sidebar.tsx
+apps/web/hooks/useDashboardStats.ts
+package-lock.json

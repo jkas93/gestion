@@ -1,0 +1,2 @@
+8b96762 2026-02-16 Actualiza dashboard y ajustes en API
+8a92d93 2026-02-13 Feat: Registro detallado de colaboradores y consolidaci??n de accesos ERP

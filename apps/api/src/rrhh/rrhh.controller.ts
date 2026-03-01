@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Patch, UseGuards, UsePipes } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Patch, Delete, UseGuards, UsePipes, Query, Req } from '@nestjs/common';
 import { RRHHService } from './rrhh.service';
 import { FirebaseAuthGuard } from '../auth/firebase-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -12,6 +12,12 @@ import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 export class RRHHController {
     constructor(private readonly rrhhService: RRHHService) { }
 
+    @Get('check-existence')
+    @Roles(UserRole.GERENTE, UserRole.RRHH)
+    async checkExistence(@Query('dni') dni?: string, @Query('email') email?: string) {
+        return this.rrhhService.checkExistence(dni, email);
+    }
+
     @Post('employees')
     @Roles(UserRole.GERENTE, UserRole.RRHH)
     @UsePipes(new ZodValidationPipe(EmployeeSchema))
@@ -20,10 +26,23 @@ export class RRHHController {
         return { id, message: 'Employee registered successfully' };
     }
 
+    // --- Self-Activation Endpoint ---
+    @Post('activate')
+    async activate(@Req() req: any) {
+        // El usuario se activa a sí mismo al hacer login por primera vez
+        const uid = req.user.uid;
+        await this.rrhhService.activateEmployee(uid);
+        return { message: 'Cuenta activada y confirmada' };
+    }
+
     @Get('employees')
     @Roles(UserRole.GERENTE, UserRole.RRHH)
-    async findAll() {
-        return this.rrhhService.findAllEmployees();
+    async findAll(
+        @Query('limit') limit?: string,
+        @Query('cursor') cursor?: string
+    ) {
+        const pageSize = limit ? parseInt(limit, 10) : 50;
+        return this.rrhhService.findAllEmployees(pageSize, cursor);
     }
 
     @Patch('employees/:id')
@@ -31,6 +50,19 @@ export class RRHHController {
     async update(@Param('id') id: string, @Body() data: any) {
         await this.rrhhService.updateEmployee(id, data);
         return { message: 'Employee updated' };
+    }
+
+    @Get('employees/:id')
+    @Roles(UserRole.GERENTE, UserRole.RRHH)
+    async findOne(@Param('id') id: string) {
+        return this.rrhhService.findOneEmployee(id);
+    }
+
+    @Delete('employees/:id')
+    @Roles(UserRole.GERENTE)
+    async delete(@Param('id') id: string) {
+        await this.rrhhService.deleteEmployee(id);
+        return { message: 'Employee deleted successfully' };
     }
 
     // --- Attendance Endpoints ---
@@ -67,4 +99,6 @@ export class RRHHController {
         await this.rrhhService.updateIncidentStatus(id, status);
         return { message: 'Incident status updated' };
     }
+
+
 }

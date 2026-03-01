@@ -67,10 +67,19 @@ export default function FinancePage() {
     const fetchProjects = async () => {
         try {
             const idToken = await auth.currentUser?.getIdToken();
-            const res = await fetch(`${API_URL}/projects`, {
+            const res = await fetch(`${API_URL}/projects?limit=50`, {
                 headers: { Authorization: `Bearer ${idToken}` },
             });
-            if (res.ok) setProjects(await res.json());
+            if (res.ok) {
+                const data = await res.json();
+                if (data.projects && Array.isArray(data.projects)) {
+                    setProjects(data.projects);
+                } else if (Array.isArray(data)) {
+                    setProjects(data);
+                } else {
+                    setProjects([]);
+                }
+            }
         } catch (error) {
             console.error(error);
         }
@@ -215,9 +224,9 @@ export default function FinancePage() {
                                 <td className="py-4 px-6 text-gray-500 text-sm font-medium italic">{p.provider}</td>
                                 <td className="py-4 px-6">
                                     <span className={`px-3 py-1 rounded-lg text-[10px] font-bold border uppercase tracking-widest ${p.status === 'RECIBIDO' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
-                                            p.status === 'APROBADO' ? 'bg-blue-50 text-blue-600 border-blue-100' :
-                                                p.status === 'PAGADO' ? 'bg-purple-50 text-purple-600 border-purple-100' :
-                                                    'bg-amber-50 text-amber-600 border-amber-100'
+                                        p.status === 'APROBADO' ? 'bg-blue-50 text-blue-600 border-blue-100' :
+                                            p.status === 'PAGADO' ? 'bg-purple-50 text-purple-600 border-purple-100' :
+                                                'bg-amber-50 text-amber-600 border-amber-100'
                                         }`}>
                                         {p.status}
                                     </span>

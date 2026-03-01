@@ -101,6 +101,9 @@ export const PurchaseSchema = z.object({
     date: z.string().min(1), // YYYY-MM-DD
 });
 
+export type Purchase = z.infer<typeof PurchaseSchema> & { id: string; createdAt: string; updatedAt?: string };
+export type CreatePurchaseDto = z.infer<typeof PurchaseSchema>;
+
 export const MaterialSchema = z.object({
     name: z.string().min(2, 'Nombre del material requerido'),
     unit: z.string().min(1, 'Unidad de medida requerida'), // e.g., 'UND', 'M3', 'KG'

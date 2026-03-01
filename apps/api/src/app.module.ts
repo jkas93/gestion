@@ -12,13 +12,18 @@ import { MaterialsModule } from './materials/materials.module';
 import { MaterialRequestsModule } from './material-requests/material-requests.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { MailModule } from './mail/mail.module';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      envFilePath: ['.env', '../.env', '../../.env'], // Search in current dir, parent, and root
     }),
     FirebaseModule,
+    MailModule,
+    HealthModule,
     UsersModule,
     ProjectsModule,
     RRHHModule,
