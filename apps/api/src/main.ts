@@ -31,7 +31,12 @@ async function bootstrap() {
 
   // Fase 3: Configuración de middleware
   const middlewareStartTime = Date.now();
-  app.enableCors(); // Enable CORS for the frontend
+  // CORS: en producción solo acepta peticiones del dominio de Vercel
+  app.enableCors({
+    origin: process.env.FRONTEND_URL || '*',
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    credentials: true,
+  });
   app.useGlobalFilters(new AllExceptionsFilter());
   const middlewareTime = Date.now() - middlewareStartTime;
   logger.log(`✅ Middleware configurado (CORS + ExceptionFilter) en ${middlewareTime}ms`);
